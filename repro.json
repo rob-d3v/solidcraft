@@ -1,0 +1,5 @@
+{"description":"Press Pull on a pin inside a housing that comes first","commands":[
+ {"command":"solid.box","params":{"length":100,"width":100,"height":100,"corner":[0,0,0],"body_name":"Housing"}},
+ {"command":"solid.box","params":{"length":80,"width":80,"height":100,"corner":[10,10,10],"operation":"cut","targets":["Housing"]}},
+ {"command":"solid.cylinder","params":{"base":[50,50,10],"radius":8,"height":40,"operation":"join","targets":[],"body_name":"Pin","operation":"new"}}
+]}
