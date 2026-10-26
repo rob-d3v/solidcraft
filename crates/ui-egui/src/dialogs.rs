@@ -3270,6 +3270,26 @@ fn sels(d: &Dialog, i: usize) -> &[Sel] {
     selection::items(&d.inputs, i)
 }
 
+/// The body every picked edge and face lies on, when they all lie on one. A face feature given
+/// it finds its faces there alone; without it, it looks through every body for each point and
+/// takes the one whose box is nearest, which in an assembly can be an enclosing part with no face
+/// there ("no face at …") and meshes every part of a large design (#4555, as Shell names it).
+fn single_body(picks: &[Sel]) -> Option<String> {
+    let mut bodies = picks.iter().filter_map(|x| match x {
+        Sel::Edge { body, .. } | Sel::Face { body, .. } => Some(body),
+        _ => None,
+    });
+    bodies.next().filter(|first| bodies.all(|b| b == *first)).cloned()
+}
+
+/// `p` with the picked faces' or edges' body named ([`single_body`]).
+fn with_single_body(mut p: Value, picks: &[Sel]) -> Value {
+    if let Some(body) = single_body(picks) {
+        p["body"] = json!(body);
+    }
+    p
+}
+
 /// Section Analysis with a section on and no plane picked: OK turns the section off.
 fn section_turns_off(s: &Session, inputs: &[selection::SelInput]) -> bool {
     s.section.is_some() && selection::items(inputs, 0).is_empty()
@@ -3638,7 +3658,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
             }
             let edges: Vec<Value> = uniq.into_iter().map(pt).collect();
             if *chamfer {
-                let mut p = json!({"edges": edges, "distance": radius});
+                let mut p = with_single_body(json!({"edges": edges, "distance": radius}), sels(d, 0));
                 match *ctype {
                     1 => p["distance2"] = json!(distance2),
                     2 => p["angle"] = json!(angle),
@@ -3649,7 +3669,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                 }
                 ("solid.chamfer", p)
             } else {
-                let mut p = json!({"edges": edges, "radius": radius});
+                let mut p = with_single_body(json!({"edges": edges, "radius": radius}), sels(d, 0));
                 let style = d.extra.get("type").and_then(Value::as_str);
                 if matches!(style, Some("variable" | "spline")) {
                     // The start radius goes at one end of the first edge (Swap Ends: the other).
@@ -3690,7 +3710,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
             need(0, "faces")?;
             need(1, "the neutral plane")?;
             let neutral = plane_value(s, sels(d, 1).first()).ok_or("the neutral plane must be a plane or a planar face")?;
-            ("solid.draft", json!({"faces": face_points(0), "neutral": neutral}))
+            ("solid.draft", with_single_body(json!({"faces": face_points(0), "neutral": neutral}), sels(d, 0)))
         }
         Kind::Mirror => {
             need(0, "objects")?;
@@ -3877,7 +3897,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
         Kind::ReplaceFace => {
             need(0, "faces to move")?;
             need(1, "the target")?;
-            let mut p = json!({"faces": face_points(0)});
+            let mut p = with_single_body(json!({"faces": face_points(0)}), sels(d, 0));
             match sels(d, 1).first() {
                 Some(Sel::Plane { name }) => p["target"] = json!(name),
                 Some(Sel::Face { point, .. }) => p["target_face"] = pt(*point),
@@ -3887,7 +3907,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
         }
         Kind::DeleteFaces => {
             need(0, "faces")?;
-            ("face.delete", json!({"faces": face_points(0)}))
+            ("face.delete", with_single_body(json!({"faces": face_points(0)}), sels(d, 0)))
         }
         Kind::Align { flip } => {
             need(0, "bodies")?;
@@ -3974,7 +3994,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
         }
         Kind::OffsetFaces { .. } => {
             need(0, "faces")?;
-            ("solid.offset_face", json!({"faces": face_points(0)}))
+            ("solid.offset_face", with_single_body(json!({"faces": face_points(0)}), sels(d, 0)))
         }
         Kind::Thread { designation, length, suggested, .. } => {
             need(0, "a cylindrical face")?;
